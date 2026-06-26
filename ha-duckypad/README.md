@@ -231,6 +231,13 @@ A complete example script lives at:
 ha-duckypad/examples/home_assistant_live_hid_script.yaml
 ```
 
+More copy-and-adapt Home Assistant examples live at:
+
+```text
+ha-duckypad/examples/home_assistant_scripts.yaml
+ha-duckypad/examples/home_assistant_automations.yaml
+```
+
 ## Entity State Sync to DuckyPad GV
 
 The add-on can read Home Assistant entity states and write them to DuckyPad
@@ -280,6 +287,15 @@ Example DuckyScript for the OLED lives at:
 ha-duckypad/examples/oled_gv_status.txt
 ```
 
+For a status screen that stays visible, use:
+
+```text
+ha-duckypad/examples/oled_live_switch_status_loop.txt
+```
+
+Enable the DuckyPad Configurator "Allow Abort" option for looping OLED scripts
+so the key can be interrupted from the device.
+
 ## PC Commands With HASS.Agent
 
 To trigger commands on a Windows PC, create a HASS.Agent command as a Home
@@ -312,6 +328,22 @@ enable_hid_debug: true
 
 This mode only logs device metadata and performs a read-only open test. It does
 not write to the device. HID writes require `enable_hid_commands: true`.
+
+## Example Files
+
+The `examples/` folder contains small building blocks:
+
+- `addon_options_comfort.yaml`: add-on options for live events, `_GV` sync, and
+  a few sample button mappings.
+- `home_assistant_live_hid_script.yaml`: quick live HID smoke test.
+- `home_assistant_scripts.yaml`: reusable scripts for wake, RTC sync, GV sync,
+  RGB, and opening Home Assistant on a PC through HASS.Agent.
+- `home_assistant_automations.yaml`: example automations that react to
+  `switch.elegoo` and `switch.voron`.
+- `oled_gv_status.txt`: short one-shot OLED status display.
+- `oled_live_switch_status_loop.txt`: looping OLED display for `_GV0` and
+  `_GV1`.
+- `oled_macro_confirm_once.txt`: short confirmation screen after a macro.
 
 ## Repository Layout
 
