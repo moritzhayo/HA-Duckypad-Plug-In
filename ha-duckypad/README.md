@@ -8,8 +8,9 @@ Home Assistant OS add-on for reading key events from a DuckyPad Pro USB input
 device and triggering Home Assistant services.
 
 This MVP focuses on reliable key input handling first. Experimental HID
-commands can send a small set of documented commands back to the DuckyPad Pro,
-but direct OLED drawing is not implemented.
+commands can send a small set of documented commands back to the DuckyPad Pro.
+Direct host-side OLED drawing is not implemented; OLED workflows use
+DuckyScript on the device plus `_GV` values written by the add-on.
 
 ## What It Does
 
@@ -22,6 +23,12 @@ but direct OLED drawing is not implemented.
 - Debounces repeated key-down events to avoid accidental double triggers.
 - Optionally logs safe HID diagnostics for future OLED/RGB experiments.
 - Optionally sends documented DuckyPad HID commands when explicitly enabled.
+- Optionally listens for Home Assistant events that trigger HID commands live,
+  without restarting the add-on.
+- Optionally syncs Home Assistant entity states into DuckyPad persistent global
+  variables for OLED/RGB DuckyScript workflows.
+- Optionally updates those variables immediately when Home Assistant state
+  change events arrive.
 
 ## Default Device
 
@@ -39,7 +46,12 @@ debounce_ms: 500
 hidraw_path: /dev/hidraw0
 enable_hid_debug: false
 enable_hid_commands: false
+enable_ha_event_commands: false
+ha_event_command_type: ha_duckypad_hid_command
+enable_entity_state_events: false
 hid_commands_on_start: []
+entity_state_sync_interval: 0
+entity_state_mappings: []
 button_mappings:
   - key: KEY_F13
     service: switch.toggle
@@ -69,7 +81,12 @@ debounce_ms: 500
 hidraw_path: /dev/hidraw0
 enable_hid_debug: false
 enable_hid_commands: false
+enable_ha_event_commands: false
+ha_event_command_type: ha_duckypad_hid_command
+enable_entity_state_events: false
 hid_commands_on_start: []
+entity_state_sync_interval: 0
+entity_state_mappings: []
 button_mappings:
   - key: KEY_F13
     service: switch.toggle
@@ -92,8 +109,18 @@ Each mapping uses:
   not send commands to the DuckyPad.
 - `enable_hid_commands`: Allows the add-on to write documented 64-byte HID
   command packets to `hidraw_path`. Default is `false`.
+- `enable_ha_event_commands`: Allows Home Assistant events to trigger HID
+  commands while the add-on is running. Default is `false`.
+- `ha_event_command_type`: Event type the add-on listens for when live HID
+  commands are enabled. Default is `ha_duckypad_hid_command`.
+- `enable_entity_state_events`: Uses Home Assistant `state_changed` events to
+  update configured `_GV` mappings immediately. Default is `false`.
 - `hid_commands_on_start`: Optional list of HID commands to send once when the
   add-on starts.
+- `entity_state_mappings`: Optional list of Home Assistant entity states to
+  write into DuckyPad `_GV0` to `_GV31`.
+- `entity_state_sync_interval`: Optional refresh interval in seconds. `0`
+  disables periodic refresh; mappings still sync once at startup.
 
 ## Experimental HID Commands
 
@@ -151,6 +178,107 @@ button_mappings:
 For OLED workflows, use `write_gv` to send numeric state into `_GV0` to
 `_GV31`, then use DuckyScript on the DuckyPad to read those values and draw on
 the OLED with `OLED_PRINT`, `OLED_CLEAR`, and `OLED_UPDATE`.
+
+## Live HID Commands from Home Assistant
+
+Enable the live event listener:
+
+```yaml
+enable_hid_commands: true
+enable_ha_event_commands: true
+ha_event_command_type: ha_duckypad_hid_command
+```
+
+Then fire a Home Assistant event with the same fields used by a configured
+`hid_command`.
+
+Example script action that changes one LED:
+
+```yaml
+sequence:
+  - event: ha_duckypad_hid_command
+    event_data:
+      hid_command: set_rgb
+      led_index: 0
+      red: 0
+      green: 64
+      blue: 255
+mode: single
+```
+
+Example script action that writes `_GV2=42`:
+
+```yaml
+sequence:
+  - event: ha_duckypad_hid_command
+    event_data:
+      hid_command: write_gv
+      gv_index: 2
+      gv_value: 42
+mode: single
+```
+
+You can also test from Developer Tools -> Events by firing
+`ha_duckypad_hid_command` with JSON event data:
+
+```json
+{"hid_command":"get_info"}
+```
+
+A complete example script lives at:
+
+```text
+ha-duckypad/examples/home_assistant_live_hid_script.yaml
+```
+
+## Entity State Sync to DuckyPad GV
+
+The add-on can read Home Assistant entity states and write them to DuckyPad
+persistent global variables. This is the easiest bridge for OLED display
+workflows.
+
+Example: sync two switches to `_GV0` and `_GV1` every 10 seconds:
+
+```yaml
+enable_hid_commands: true
+entity_state_sync_interval: 10
+enable_entity_state_events: true
+entity_state_mappings:
+  - entity_id: switch.elegoo
+    gv_index: 0
+    state_type: bool
+  - entity_id: switch.voron
+    gv_index: 1
+    state_type: bool
+```
+
+For `state_type: bool`, common states such as `on`, `open`, `home`, and `true`
+become `1`; `off`, `closed`, `not_home`, and `false` become `0`.
+
+For numeric sensors, use `state_type: number`:
+
+```yaml
+entity_state_mappings:
+  - entity_id: sensor.living_room_temperature
+    gv_index: 2
+    state_type: number
+```
+
+To read an attribute instead of the main state:
+
+```yaml
+entity_state_mappings:
+  - entity_id: weather.home
+    attribute: temperature
+    gv_index: 3
+    state_type: number
+```
+
+Example DuckyScript for the OLED lives at:
+
+```text
+ha-duckypad/examples/oled_gv_status.txt
+```
 
 ## PC Commands With HASS.Agent
 
