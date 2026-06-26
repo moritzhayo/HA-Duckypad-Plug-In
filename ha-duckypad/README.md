@@ -19,6 +19,7 @@ DuckyPad display or RGB lighting.
 - Reconnects automatically if the USB device disappears and comes back.
 - Ignores common modifier keys such as `KEY_LEFTMETA`.
 - Debounces repeated key-down events to avoid accidental double triggers.
+- Optionally logs safe HID diagnostics for future OLED/RGB experiments.
 
 ## Default Device
 
@@ -33,6 +34,8 @@ path can point to the stable `by-id` path.
 
 ```yaml
 debounce_ms: 500
+hidraw_path: /dev/hidraw0
+enable_hid_debug: false
 button_mappings:
   - key: KEY_F13
     service: switch.toggle
@@ -59,6 +62,8 @@ http://supervisor/core/api/services/<domain>/<service>
 ```yaml
 device_path: /dev/input/by-id/usb-dekuNukem_duckyPad_Pro_DP24_A1E7C3D4-event-kbd
 debounce_ms: 500
+hidraw_path: /dev/hidraw0
+enable_hid_debug: false
 button_mappings:
   - key: KEY_F13
     service: switch.toggle
@@ -75,6 +80,10 @@ Each mapping uses:
 - `entity_id`: Optional Home Assistant entity ID passed as service data.
 - `debounce_ms`: Time window in milliseconds during which repeated key-down
   events for the same key are ignored.
+- `hidraw_path`: Experimental HID raw device path for future DuckyPad output
+  features.
+- `enable_hid_debug`: Logs HID metadata and tests read-only access. This does
+  not send commands to the DuckyPad.
 
 ## PC Commands With HASS.Agent
 
@@ -90,6 +99,24 @@ button_mappings:
 
 If the DuckyPad key sends modifier keys such as `KEY_LEFTMETA` together with
 the real key, the add-on logs the event but ignores the modifier for mapping.
+
+## Experimental HID Diagnostics
+
+The DuckyPad Pro may expose an additional HID raw device such as:
+
+```text
+/dev/hidraw0
+```
+
+Enable diagnostics to check whether the add-on can see and open that device:
+
+```yaml
+hidraw_path: /dev/hidraw0
+enable_hid_debug: true
+```
+
+This mode only logs device metadata and performs a read-only open test. It does
+not write to the device and does not control the OLED display or RGB lighting.
 
 ## Repository Layout
 
