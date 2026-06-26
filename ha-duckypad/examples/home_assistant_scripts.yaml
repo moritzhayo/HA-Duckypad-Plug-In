@@ -1,0 +1,68 @@
+duckypad_wake_and_sync_clock:
+  alias: DuckyPad Wake and Sync Clock
+  mode: single
+  sequence:
+    - event: ha_duckypad_hid_command
+      event_data:
+        hid_command: wake
+    - delay:
+        milliseconds: 300
+    - event: ha_duckypad_hid_command
+      event_data:
+        hid_command: set_rtc
+    - delay:
+        milliseconds: 300
+    - event: ha_duckypad_hid_command
+      event_data:
+        hid_command: get_info
+
+duckypad_status_to_gv:
+  alias: DuckyPad Write Status Values
+  mode: single
+  sequence:
+    - event: ha_duckypad_hid_command
+      event_data:
+        hid_command: write_gv
+        gv_index: 0
+        gv_value: "{{ 1 if is_state('switch.elegoo', 'on') else 0 }}"
+    - event: ha_duckypad_hid_command
+      event_data:
+        hid_command: write_gv
+        gv_index: 1
+        gv_value: "{{ 1 if is_state('switch.voron', 'on') else 0 }}"
+    - event: ha_duckypad_hid_command
+      event_data:
+        hid_command: dump_gv
+        gv_index: 0
+
+duckypad_open_home_assistant_on_pc:
+  alias: DuckyPad Open Home Assistant on PC
+  mode: single
+  sequence:
+    - service: button.press
+      target:
+        entity_id: button.windowspc_open_home_assistant
+
+duckypad_rgb_blue:
+  alias: DuckyPad RGB Blue
+  mode: single
+  sequence:
+    - event: ha_duckypad_hid_command
+      event_data:
+        hid_command: set_rgb
+        led_index: 0
+        red: 0
+        green: 64
+        blue: 255
+
+duckypad_rgb_off:
+  alias: DuckyPad RGB Off
+  mode: single
+  sequence:
+    - event: ha_duckypad_hid_command
+      event_data:
+        hid_command: set_rgb
+        led_index: 0
+        red: 0
+        green: 0
+        blue: 0
