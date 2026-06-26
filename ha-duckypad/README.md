@@ -17,6 +17,8 @@ DuckyPad display or RGB lighting.
 - Calls Home Assistant services on key-down events.
 - Uses the Home Assistant add-on `SUPERVISOR_TOKEN`.
 - Reconnects automatically if the USB device disappears and comes back.
+- Ignores common modifier keys such as `KEY_LEFTMETA`.
+- Debounces repeated key-down events to avoid accidental double triggers.
 
 ## Default Device
 
@@ -30,6 +32,7 @@ path can point to the stable `by-id` path.
 ## Default Button Mappings
 
 ```yaml
+debounce_ms: 500
 button_mappings:
   - key: KEY_F13
     service: switch.toggle
@@ -55,6 +58,7 @@ http://supervisor/core/api/services/<domain>/<service>
 
 ```yaml
 device_path: /dev/input/by-id/usb-dekuNukem_duckyPad_Pro_DP24_A1E7C3D4-event-kbd
+debounce_ms: 500
 button_mappings:
   - key: KEY_F13
     service: switch.toggle
@@ -69,6 +73,23 @@ Each mapping uses:
 - `key`: Linux input key name, for example `KEY_F13`.
 - `service`: Home Assistant service in `domain.service` format.
 - `entity_id`: Optional Home Assistant entity ID passed as service data.
+- `debounce_ms`: Time window in milliseconds during which repeated key-down
+  events for the same key are ignored.
+
+## PC Commands With HASS.Agent
+
+To trigger commands on a Windows PC, create a HASS.Agent command as a Home
+Assistant button entity, then map a DuckyPad key to `button.press`:
+
+```yaml
+button_mappings:
+  - key: KEY_F12
+    service: button.press
+    entity_id: button.start_calc
+```
+
+If the DuckyPad key sends modifier keys such as `KEY_LEFTMETA` together with
+the real key, the add-on logs the event but ignores the modifier for mapping.
 
 ## Repository Layout
 
