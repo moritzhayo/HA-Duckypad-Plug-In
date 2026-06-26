@@ -1,5 +1,9 @@
 # HA DuckyPad
 
+> **Experimental:** This repository is very experimental and was written with
+> AI assistance. Review the code and test carefully before relying on it for
+> important automations.
+
 Home Assistant OS add-on for reading key events from a DuckyPad Pro USB input
 device and triggering Home Assistant services.
 
