@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import stat
 import time
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,8 @@ DEFAULT_DEVICE_PATH = (
 DEFAULT_OPTIONS = {
     "device_path": DEFAULT_DEVICE_PATH,
     "debounce_ms": 500,
+    "hidraw_path": "/dev/hidraw0",
+    "enable_hid_debug": False,
     "button_mappings": [
         {
             "key": "KEY_F13",
@@ -66,8 +69,68 @@ def load_options() -> dict[str, Any]:
     return {
         "device_path": options.get("device_path") or DEFAULT_DEVICE_PATH,
         "debounce_ms": int(options.get("debounce_ms", 500)),
+        "hidraw_path": options.get("hidraw_path") or "",
+        "enable_hid_debug": bool(options.get("enable_hid_debug", False)),
         "button_mappings": options.get("button_mappings") or [],
     }
+
+
+def read_text_file(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        LOGGER.debug("Could not read %s: %s", path, error)
+        return None
+
+
+def log_hidraw_diagnostics(hidraw_path: str, enabled: bool) -> None:
+    if not enabled:
+        LOGGER.info("HID debug is disabled")
+        return
+
+    if not hidraw_path:
+        LOGGER.warning("HID debug is enabled, but no hidraw_path is configured")
+        return
+
+    path = Path(hidraw_path)
+    LOGGER.info("HID debug enabled for %s", path)
+
+    if not path.exists():
+        LOGGER.warning("HID raw device does not exist: %s", path)
+        return
+
+    try:
+        device_stat = path.stat()
+    except OSError as error:
+        LOGGER.warning("Could not stat HID raw device %s: %s", path, error)
+        return
+
+    mode = stat.S_IMODE(device_stat.st_mode)
+    LOGGER.info(
+        "HID raw device stat: mode=%s uid=%s gid=%s rdev=%s",
+        oct(mode),
+        device_stat.st_uid,
+        device_stat.st_gid,
+        device_stat.st_rdev,
+    )
+
+    sysfs_dir = Path("/sys/class/hidraw") / path.name / "device"
+    uevent = read_text_file(sysfs_dir / "uevent")
+    if uevent:
+        LOGGER.info("HID sysfs uevent for %s:\n%s", path.name, uevent)
+    else:
+        LOGGER.warning("No HID sysfs uevent found for %s at %s", path.name, sysfs_dir)
+
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+    except OSError as error:
+        LOGGER.warning("Could not open HID raw device %s read-only: %s", path, error)
+        return
+
+    try:
+        LOGGER.info("Opened HID raw device %s read-only successfully", path)
+    finally:
+        os.close(fd)
 
 
 def normalize_keycode(keycode: str | list[str]) -> str:
@@ -234,6 +297,8 @@ def main() -> None:
     options = load_options()
     device_path = str(options["device_path"])
     debounce_seconds = max(0, int(options.get("debounce_ms", 500))) / 1000
+    hidraw_path = str(options.get("hidraw_path", ""))
+    enable_hid_debug = bool(options.get("enable_hid_debug", False))
     mappings = build_mapping_lookup(options["button_mappings"])
     headers = get_auth_headers()
     api_base_url = get_api_base_url()
@@ -241,6 +306,7 @@ def main() -> None:
     LOGGER.info("Using input device path: %s", device_path)
     LOGGER.info("Using Home Assistant API base URL: %s", api_base_url)
     LOGGER.info("Using debounce window: %.3f second(s)", debounce_seconds)
+    log_hidraw_diagnostics(hidraw_path, enable_hid_debug)
 
     while True:
         try:
