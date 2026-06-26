@@ -5,6 +5,7 @@ import logging
 import os
 import select
 import stat
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +27,8 @@ DEFAULT_OPTIONS = {
     "enable_hid_debug": False,
     "enable_hid_commands": False,
     "hid_commands_on_start": [],
+    "entity_state_sync_interval": 0,
+    "entity_state_mappings": [],
     "button_mappings": [
         {
             "key": "KEY_F13",
@@ -87,6 +90,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [ha-duckypad] %(message)s",
 )
 LOGGER = logging.getLogger("ha-duckypad")
+HID_LOCK = threading.Lock()
 
 
 def as_optional_string(value: Any) -> str:
@@ -114,6 +118,10 @@ def load_options() -> dict[str, Any]:
         "enable_hid_debug": bool(options.get("enable_hid_debug", False)),
         "enable_hid_commands": bool(options.get("enable_hid_commands", False)),
         "hid_commands_on_start": options.get("hid_commands_on_start") or [],
+        "entity_state_sync_interval": int(
+            options.get("entity_state_sync_interval", 0)
+        ),
+        "entity_state_mappings": options.get("entity_state_mappings") or [],
         "button_mappings": options.get("button_mappings") or [],
     }
 
@@ -276,6 +284,33 @@ def call_home_assistant_service(
     LOGGER.info("Service call succeeded for %s with status %s", service, response.status_code)
 
 
+def get_home_assistant_entity_state(
+    entity_id: str,
+    headers: dict[str, str] | None,
+    api_base_url: str,
+) -> dict[str, Any] | None:
+    if headers is None:
+        LOGGER.warning("Skipping state read for %s because API auth is unavailable", entity_id)
+        return None
+
+    url = f"{api_base_url}/states/{entity_id}"
+
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as error:
+        LOGGER.error("State read failed for %s: %s", entity_id, error)
+    except ValueError as error:
+        LOGGER.error("State response for %s was not valid JSON: %s", entity_id, error)
+
+    return None
+
+
 def config_int(
     config: dict[str, Any],
     key: str,
@@ -294,6 +329,70 @@ def config_int(
         raise ValueError(f"{key} must be <= {maximum}")
 
     return value
+
+
+def get_mapping_source_value(mapping: dict[str, Any], state_data: dict[str, Any]) -> Any:
+    attribute = as_optional_string(mapping.get("attribute"))
+    if not attribute:
+        return state_data.get("state")
+
+    attributes = state_data.get("attributes") or {}
+    if not isinstance(attributes, dict):
+        return None
+
+    return attributes.get(attribute)
+
+
+def list_from_config(value: Any, fallback: list[str]) -> list[str]:
+    if value is None:
+        return fallback
+    if isinstance(value, list):
+        return [as_optional_string(item).lower() for item in value if as_optional_string(item)]
+    text = as_optional_string(value)
+    if not text:
+        return fallback
+    return [item.strip().lower() for item in text.split(",") if item.strip()]
+
+
+def map_state_value_to_gv(mapping: dict[str, Any], raw_value: Any) -> int | None:
+    state_type = as_optional_string(mapping.get("state_type")).lower() or "auto"
+    value_text = as_optional_string(raw_value)
+    value_lower = value_text.lower()
+
+    unavailable_values = {"unknown", "unavailable", "none", ""}
+    if value_lower in unavailable_values:
+        if "default_value" in mapping:
+            return config_int(mapping, "default_value", 0, -(2**31), 2**31 - 1)
+        return None
+
+    on_states = list_from_config(
+        mapping.get("on_states"),
+        ["on", "open", "home", "playing", "heat", "cool", "true", "1"],
+    )
+    off_states = list_from_config(
+        mapping.get("off_states"),
+        ["off", "closed", "not_home", "idle", "standby", "false", "0"],
+    )
+
+    if state_type in {"auto", "bool", "boolean"}:
+        if value_lower in on_states:
+            return config_int(mapping, "on_value", 1, -(2**31), 2**31 - 1)
+        if value_lower in off_states:
+            return config_int(mapping, "off_value", 0, -(2**31), 2**31 - 1)
+        if state_type in {"bool", "boolean"}:
+            if "default_value" in mapping:
+                return config_int(mapping, "default_value", 0, -(2**31), 2**31 - 1)
+            return None
+
+    if state_type in {"auto", "number", "numeric"}:
+        try:
+            return round(float(value_text))
+        except (TypeError, ValueError):
+            if "default_value" in mapping:
+                return config_int(mapping, "default_value", 0, -(2**31), 2**31 - 1)
+            return None
+
+    return None
 
 
 def build_hid_packet(config: dict[str, Any]) -> tuple[str, bytes]:
@@ -453,7 +552,8 @@ def run_configured_hid_command(
     try:
         command, packet = build_hid_packet(config)
         LOGGER.info("Sending DuckyPad HID command %s from %s", command, source)
-        response = send_hid_packet(hidraw_path, packet)
+        with HID_LOCK:
+            response = send_hid_packet(hidraw_path, packet)
     except (OSError, ValueError) as error:
         LOGGER.error("HID command %s failed before response: %s", command, error)
         return
@@ -508,6 +608,138 @@ def run_startup_hid_commands(
             enabled,
             f"startup command #{index}",
         )
+
+
+def sync_entity_state_mapping(
+    mapping: dict[str, Any],
+    headers: dict[str, str] | None,
+    api_base_url: str,
+    hidraw_path: str,
+    enable_hid_commands: bool,
+) -> None:
+    entity_id = as_optional_string(mapping.get("entity_id"))
+    if not entity_id:
+        LOGGER.warning("Ignoring entity state mapping without entity_id: %s", mapping)
+        return
+
+    if "gv_index" not in mapping:
+        LOGGER.warning("Ignoring entity state mapping for %s without gv_index", entity_id)
+        return
+
+    try:
+        gv_index = config_int(mapping, "gv_index", 0, 0, 31)
+    except ValueError as error:
+        LOGGER.error("Ignoring entity state mapping for %s: %s", entity_id, error)
+        return
+
+    state_data = get_home_assistant_entity_state(entity_id, headers, api_base_url)
+    if state_data is None:
+        return
+
+    raw_value = get_mapping_source_value(mapping, state_data)
+    gv_value = map_state_value_to_gv(mapping, raw_value)
+    if gv_value is None:
+        LOGGER.warning(
+            "Could not map state for %s to _GV%s: %s",
+            entity_id,
+            gv_index,
+            raw_value,
+        )
+        return
+
+    LOGGER.info(
+        "Syncing %s=%s to _GV%s=%s",
+        entity_id,
+        raw_value,
+        gv_index,
+        gv_value,
+    )
+    run_configured_hid_command(
+        {
+            "hid_command": "write_gv",
+            "gv_index": gv_index,
+            "gv_value": gv_value,
+        },
+        hidraw_path,
+        enable_hid_commands,
+        f"entity state mapping for {entity_id}",
+    )
+
+
+def sync_entity_state_mappings_once(
+    mappings: list[Any],
+    headers: dict[str, str] | None,
+    api_base_url: str,
+    hidraw_path: str,
+    enable_hid_commands: bool,
+) -> None:
+    if not mappings:
+        return
+    if not isinstance(mappings, list):
+        LOGGER.warning("Ignoring entity_state_mappings because it is not a list")
+        return
+
+    for mapping in mappings:
+        if not isinstance(mapping, dict):
+            LOGGER.warning("Ignoring invalid entity state mapping: %s", mapping)
+            continue
+        sync_entity_state_mapping(
+            mapping,
+            headers,
+            api_base_url,
+            hidraw_path,
+            enable_hid_commands,
+        )
+
+
+def entity_state_sync_loop(
+    interval_seconds: int,
+    mappings: list[Any],
+    headers: dict[str, str] | None,
+    api_base_url: str,
+    hidraw_path: str,
+    enable_hid_commands: bool,
+) -> None:
+    while True:
+        time.sleep(interval_seconds)
+        try:
+            sync_entity_state_mappings_once(
+                mappings,
+                headers,
+                api_base_url,
+                hidraw_path,
+                enable_hid_commands,
+            )
+        except Exception:
+            LOGGER.exception("Unexpected error while syncing entity states")
+
+
+def start_entity_state_sync_thread(
+    interval_seconds: int,
+    mappings: list[Any],
+    headers: dict[str, str] | None,
+    api_base_url: str,
+    hidraw_path: str,
+    enable_hid_commands: bool,
+) -> None:
+    if not mappings or interval_seconds <= 0:
+        return
+
+    LOGGER.info("Starting entity state sync every %s second(s)", interval_seconds)
+    thread = threading.Thread(
+        target=entity_state_sync_loop,
+        args=(
+            interval_seconds,
+            mappings,
+            headers,
+            api_base_url,
+            hidraw_path,
+            enable_hid_commands,
+        ),
+        daemon=True,
+        name="entity-state-sync",
+    )
+    thread.start()
 
 
 def execute_mapping_actions(
@@ -609,6 +841,11 @@ def main() -> None:
     enable_hid_debug = bool(options.get("enable_hid_debug", False))
     enable_hid_commands = bool(options.get("enable_hid_commands", False))
     hid_commands_on_start = options.get("hid_commands_on_start") or []
+    entity_state_sync_interval = max(
+        0,
+        int(options.get("entity_state_sync_interval", 0)),
+    )
+    entity_state_mappings = options.get("entity_state_mappings") or []
     mappings = build_mapping_lookup(options["button_mappings"])
     headers = get_auth_headers()
     api_base_url = get_api_base_url()
@@ -620,6 +857,21 @@ def main() -> None:
     log_hidraw_diagnostics(hidraw_path, enable_hid_debug)
     run_startup_hid_commands(
         hid_commands_on_start,
+        hidraw_path,
+        enable_hid_commands,
+    )
+    sync_entity_state_mappings_once(
+        entity_state_mappings,
+        headers,
+        api_base_url,
+        hidraw_path,
+        enable_hid_commands,
+    )
+    start_entity_state_sync_thread(
+        entity_state_sync_interval,
+        entity_state_mappings,
+        headers,
+        api_base_url,
         hidraw_path,
         enable_hid_commands,
     )
