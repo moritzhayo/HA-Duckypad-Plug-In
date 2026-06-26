@@ -1,0 +1,23 @@
+enable_hid_commands: true
+enable_ha_event_commands: true
+ha_event_command_type: ha_duckypad_hid_command
+enable_entity_state_events: true
+entity_state_sync_interval: 10
+entity_state_mappings:
+  - entity_id: switch.elegoo
+    gv_index: 0
+    state_type: bool
+  - entity_id: switch.voron
+    gv_index: 1
+    state_type: bool
+button_mappings:
+  - key: KEY_F13
+    service: switch.toggle
+    entity_id: switch.elegoo
+  - key: KEY_F14
+    service: switch.toggle
+    entity_id: switch.voron
+  - key: KEY_F15
+    service: script.duckypad_wake_and_sync_clock
+  - key: KEY_F16
+    service: script.duckypad_open_home_assistant_on_pc
