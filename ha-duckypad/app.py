@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+import websocket
 from evdev import InputDevice, categorize, ecodes
 
 
@@ -20,12 +21,16 @@ DEFAULT_DEVICE_PATH = (
     "/dev/input/by-id/usb-dekuNukem_duckyPad_Pro_DP24_A1E7C3D4-event-kbd"
 )
 DEFAULT_HIDRAW_PATH = "/dev/hidraw0"
+DEFAULT_HA_EVENT_COMMAND_TYPE = "ha_duckypad_hid_command"
 DEFAULT_OPTIONS = {
     "device_path": DEFAULT_DEVICE_PATH,
     "debounce_ms": 500,
     "hidraw_path": DEFAULT_HIDRAW_PATH,
     "enable_hid_debug": False,
     "enable_hid_commands": False,
+    "enable_ha_event_commands": False,
+    "ha_event_command_type": DEFAULT_HA_EVENT_COMMAND_TYPE,
+    "enable_entity_state_events": False,
     "hid_commands_on_start": [],
     "entity_state_sync_interval": 0,
     "entity_state_mappings": [],
@@ -43,6 +48,7 @@ DEFAULT_OPTIONS = {
     ],
 }
 RECONNECT_DELAY_SECONDS = 3
+HA_EVENT_RECONNECT_DELAY_SECONDS = 5
 REQUEST_TIMEOUT_SECONDS = 10
 KEY_DOWN = 1
 IGNORED_KEYS = {
@@ -117,6 +123,16 @@ def load_options() -> dict[str, Any]:
         or DEFAULT_HIDRAW_PATH,
         "enable_hid_debug": bool(options.get("enable_hid_debug", False)),
         "enable_hid_commands": bool(options.get("enable_hid_commands", False)),
+        "enable_ha_event_commands": bool(
+            options.get("enable_ha_event_commands", False)
+        ),
+        "ha_event_command_type": as_optional_string(
+            options.get("ha_event_command_type")
+        )
+        or DEFAULT_HA_EVENT_COMMAND_TYPE,
+        "enable_entity_state_events": bool(
+            options.get("enable_entity_state_events", False)
+        ),
         "hid_commands_on_start": options.get("hid_commands_on_start") or [],
         "entity_state_sync_interval": int(
             options.get("entity_state_sync_interval", 0)
@@ -229,6 +245,25 @@ def get_auth_headers() -> dict[str, str] | None:
 
 def get_api_base_url() -> str:
     return os.environ.get("HA_API_BASE_URL", "http://supervisor/core/api").rstrip("/")
+
+
+def get_home_assistant_websocket_url(api_base_url: str) -> str:
+    configured_url = as_optional_string(os.environ.get("HA_WEBSOCKET_URL"))
+    if configured_url:
+        return configured_url
+
+    if api_base_url.endswith("/core/api"):
+        http_url = api_base_url[: -len("/api")] + "/websocket"
+    elif api_base_url.endswith("/api"):
+        http_url = api_base_url[: -len("/api")] + "/api/websocket"
+    else:
+        http_url = api_base_url.rstrip("/") + "/websocket"
+
+    if http_url.startswith("https://"):
+        return "wss://" + http_url[len("https://") :]
+    if http_url.startswith("http://"):
+        return "ws://" + http_url[len("http://") :]
+    return http_url
 
 
 def parse_service(service: str) -> tuple[str, str]:
@@ -610,18 +645,13 @@ def run_startup_hid_commands(
         )
 
 
-def sync_entity_state_mapping(
+def sync_entity_state_mapping_with_state_data(
     mapping: dict[str, Any],
-    headers: dict[str, str] | None,
-    api_base_url: str,
+    state_data: dict[str, Any],
+    entity_id: str,
     hidraw_path: str,
     enable_hid_commands: bool,
 ) -> None:
-    entity_id = as_optional_string(mapping.get("entity_id"))
-    if not entity_id:
-        LOGGER.warning("Ignoring entity state mapping without entity_id: %s", mapping)
-        return
-
     if "gv_index" not in mapping:
         LOGGER.warning("Ignoring entity state mapping for %s without gv_index", entity_id)
         return
@@ -630,10 +660,6 @@ def sync_entity_state_mapping(
         gv_index = config_int(mapping, "gv_index", 0, 0, 31)
     except ValueError as error:
         LOGGER.error("Ignoring entity state mapping for %s: %s", entity_id, error)
-        return
-
-    state_data = get_home_assistant_entity_state(entity_id, headers, api_base_url)
-    if state_data is None:
         return
 
     raw_value = get_mapping_source_value(mapping, state_data)
@@ -663,6 +689,31 @@ def sync_entity_state_mapping(
         hidraw_path,
         enable_hid_commands,
         f"entity state mapping for {entity_id}",
+    )
+
+
+def sync_entity_state_mapping(
+    mapping: dict[str, Any],
+    headers: dict[str, str] | None,
+    api_base_url: str,
+    hidraw_path: str,
+    enable_hid_commands: bool,
+) -> None:
+    entity_id = as_optional_string(mapping.get("entity_id"))
+    if not entity_id:
+        LOGGER.warning("Ignoring entity state mapping without entity_id: %s", mapping)
+        return
+
+    state_data = get_home_assistant_entity_state(entity_id, headers, api_base_url)
+    if state_data is None:
+        return
+
+    sync_entity_state_mapping_with_state_data(
+        mapping,
+        state_data,
+        entity_id,
+        hidraw_path,
+        enable_hid_commands,
     )
 
 
@@ -738,6 +789,288 @@ def start_entity_state_sync_thread(
         ),
         daemon=True,
         name="entity-state-sync",
+    )
+    thread.start()
+
+
+def build_entity_state_mapping_lookup(
+    mappings: list[Any],
+) -> dict[str, list[dict[str, Any]]]:
+    lookup: dict[str, list[dict[str, Any]]] = {}
+    if not isinstance(mappings, list):
+        return lookup
+
+    for mapping in mappings:
+        if not isinstance(mapping, dict):
+            continue
+        entity_id = as_optional_string(mapping.get("entity_id"))
+        if not entity_id:
+            continue
+        lookup.setdefault(entity_id, []).append(mapping)
+
+    return lookup
+
+
+def receive_websocket_json(connection: websocket.WebSocket) -> dict[str, Any]:
+    raw_message = connection.recv()
+    try:
+        message = json.loads(raw_message)
+    except ValueError as error:
+        raise ValueError(f"WebSocket message was not valid JSON: {raw_message}") from error
+    if not isinstance(message, dict):
+        raise ValueError(f"WebSocket message was not an object: {message}")
+    return message
+
+
+def send_websocket_json(
+    connection: websocket.WebSocket,
+    payload: dict[str, Any],
+) -> None:
+    connection.send(json.dumps(payload))
+
+
+def authenticate_home_assistant_websocket(
+    connection: websocket.WebSocket,
+    token: str,
+) -> None:
+    message = receive_websocket_json(connection)
+
+    if message.get("type") == "auth_required":
+        send_websocket_json(
+            connection,
+            {
+                "type": "auth",
+                "access_token": token,
+            },
+        )
+        message = receive_websocket_json(connection)
+
+    if message.get("type") != "auth_ok":
+        raise RuntimeError(f"Home Assistant WebSocket auth failed: {message}")
+
+
+def subscribe_home_assistant_event(
+    connection: websocket.WebSocket,
+    request_id: int,
+    event_type: str,
+) -> None:
+    send_websocket_json(
+        connection,
+        {
+            "id": request_id,
+            "type": "subscribe_events",
+            "event_type": event_type,
+        },
+    )
+
+    while True:
+        message = receive_websocket_json(connection)
+        if message.get("id") != request_id:
+            continue
+        if not message.get("success", False):
+            raise RuntimeError(f"Could not subscribe to {event_type}: {message}")
+        return
+
+
+def handle_home_assistant_hid_command_event(
+    event_data: dict[str, Any],
+    command_event_type: str,
+    hidraw_path: str,
+    enable_hid_commands: bool,
+) -> None:
+    command_config = dict(event_data)
+    if "hid_command" not in command_config and "command" in command_config:
+        command_config["hid_command"] = command_config["command"]
+
+    command = normalize_hid_command(as_optional_string(command_config.get("hid_command")))
+    if not command:
+        LOGGER.warning("Ignoring %s event without hid_command", command_event_type)
+        return
+
+    run_configured_hid_command(
+        command_config,
+        hidraw_path,
+        enable_hid_commands,
+        f"Home Assistant event {command_event_type}",
+    )
+
+
+def handle_home_assistant_state_changed_event(
+    event_data: dict[str, Any],
+    mapping_lookup: dict[str, list[dict[str, Any]]],
+    hidraw_path: str,
+    enable_hid_commands: bool,
+) -> None:
+    entity_id = as_optional_string(event_data.get("entity_id"))
+    if not entity_id:
+        return
+
+    mappings = mapping_lookup.get(entity_id)
+    if not mappings:
+        return
+
+    new_state = event_data.get("new_state")
+    if not isinstance(new_state, dict):
+        LOGGER.warning("State event for %s has no usable new_state", entity_id)
+        return
+
+    for mapping in mappings:
+        sync_entity_state_mapping_with_state_data(
+            mapping,
+            new_state,
+            entity_id,
+            hidraw_path,
+            enable_hid_commands,
+        )
+
+
+def run_home_assistant_event_session(
+    websocket_url: str,
+    token: str,
+    command_event_type: str,
+    enable_ha_event_commands: bool,
+    entity_state_mapping_lookup: dict[str, list[dict[str, Any]]],
+    enable_entity_state_events: bool,
+    hidraw_path: str,
+    enable_hid_commands: bool,
+) -> None:
+    connection = websocket.create_connection(
+        websocket_url,
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    try:
+        authenticate_home_assistant_websocket(connection, token)
+
+        request_id = 1
+        if enable_ha_event_commands:
+            subscribe_home_assistant_event(
+                connection,
+                request_id,
+                command_event_type,
+            )
+            LOGGER.info(
+                "Listening for Home Assistant HID command events: %s",
+                command_event_type,
+            )
+            request_id += 1
+
+        if enable_entity_state_events and entity_state_mapping_lookup:
+            subscribe_home_assistant_event(connection, request_id, "state_changed")
+            LOGGER.info("Listening for Home Assistant state_changed events")
+
+        while True:
+            try:
+                message = receive_websocket_json(connection)
+            except websocket.WebSocketTimeoutException:
+                continue
+
+            if message.get("type") != "event":
+                continue
+
+            event = message.get("event")
+            if not isinstance(event, dict):
+                continue
+
+            event_type = as_optional_string(event.get("event_type"))
+            event_data = event.get("data") or {}
+            if not isinstance(event_data, dict):
+                LOGGER.warning("Ignoring %s event with non-object data", event_type)
+                continue
+
+            if enable_ha_event_commands and event_type == command_event_type:
+                handle_home_assistant_hid_command_event(
+                    event_data,
+                    command_event_type,
+                    hidraw_path,
+                    enable_hid_commands,
+                )
+            elif enable_entity_state_events and event_type == "state_changed":
+                handle_home_assistant_state_changed_event(
+                    event_data,
+                    entity_state_mapping_lookup,
+                    hidraw_path,
+                    enable_hid_commands,
+                )
+    finally:
+        connection.close()
+
+
+def home_assistant_event_loop(
+    websocket_url: str,
+    token: str,
+    command_event_type: str,
+    enable_ha_event_commands: bool,
+    entity_state_mapping_lookup: dict[str, list[dict[str, Any]]],
+    enable_entity_state_events: bool,
+    hidraw_path: str,
+    enable_hid_commands: bool,
+) -> None:
+    while True:
+        try:
+            LOGGER.info("Connecting to Home Assistant WebSocket: %s", websocket_url)
+            run_home_assistant_event_session(
+                websocket_url,
+                token,
+                command_event_type,
+                enable_ha_event_commands,
+                entity_state_mapping_lookup,
+                enable_entity_state_events,
+                hidraw_path,
+                enable_hid_commands,
+            )
+        except websocket.WebSocketException as error:
+            LOGGER.warning(
+                "Home Assistant event listener disconnected: %s. Reconnecting in %s second(s)",
+                error,
+                HA_EVENT_RECONNECT_DELAY_SECONDS,
+            )
+        except Exception:
+            LOGGER.exception(
+                "Home Assistant event listener failed. Reconnecting in %s second(s)",
+                HA_EVENT_RECONNECT_DELAY_SECONDS,
+            )
+
+        time.sleep(HA_EVENT_RECONNECT_DELAY_SECONDS)
+
+
+def start_home_assistant_event_thread(
+    websocket_url: str,
+    command_event_type: str,
+    enable_ha_event_commands: bool,
+    entity_state_mappings: list[Any],
+    enable_entity_state_events: bool,
+    hidraw_path: str,
+    enable_hid_commands: bool,
+) -> None:
+    entity_state_mapping_lookup = build_entity_state_mapping_lookup(
+        entity_state_mappings
+    )
+    if not enable_ha_event_commands and not (
+        enable_entity_state_events and entity_state_mapping_lookup
+    ):
+        return
+
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        LOGGER.warning(
+            "Home Assistant event listener is enabled, but SUPERVISOR_TOKEN is missing"
+        )
+        return
+
+    thread = threading.Thread(
+        target=home_assistant_event_loop,
+        args=(
+            websocket_url,
+            token,
+            command_event_type,
+            enable_ha_event_commands,
+            entity_state_mapping_lookup,
+            enable_entity_state_events,
+            hidraw_path,
+            enable_hid_commands,
+        ),
+        daemon=True,
+        name="home-assistant-events",
     )
     thread.start()
 
@@ -840,6 +1173,12 @@ def main() -> None:
     hidraw_path = str(options.get("hidraw_path", ""))
     enable_hid_debug = bool(options.get("enable_hid_debug", False))
     enable_hid_commands = bool(options.get("enable_hid_commands", False))
+    enable_ha_event_commands = bool(options.get("enable_ha_event_commands", False))
+    ha_event_command_type = (
+        as_optional_string(options.get("ha_event_command_type"))
+        or DEFAULT_HA_EVENT_COMMAND_TYPE
+    )
+    enable_entity_state_events = bool(options.get("enable_entity_state_events", False))
     hid_commands_on_start = options.get("hid_commands_on_start") or []
     entity_state_sync_interval = max(
         0,
@@ -849,11 +1188,20 @@ def main() -> None:
     mappings = build_mapping_lookup(options["button_mappings"])
     headers = get_auth_headers()
     api_base_url = get_api_base_url()
+    websocket_url = get_home_assistant_websocket_url(api_base_url)
 
     LOGGER.info("Using input device path: %s", device_path)
     LOGGER.info("Using Home Assistant API base URL: %s", api_base_url)
     LOGGER.info("Using debounce window: %.3f second(s)", debounce_seconds)
     LOGGER.info("HID commands are %s", "enabled" if enable_hid_commands else "disabled")
+    LOGGER.info(
+        "Home Assistant live HID command events are %s",
+        "enabled" if enable_ha_event_commands else "disabled",
+    )
+    LOGGER.info(
+        "Home Assistant state change events are %s",
+        "enabled" if enable_entity_state_events else "disabled",
+    )
     log_hidraw_diagnostics(hidraw_path, enable_hid_debug)
     run_startup_hid_commands(
         hid_commands_on_start,
@@ -872,6 +1220,15 @@ def main() -> None:
         entity_state_mappings,
         headers,
         api_base_url,
+        hidraw_path,
+        enable_hid_commands,
+    )
+    start_home_assistant_event_thread(
+        websocket_url,
+        ha_event_command_type,
+        enable_ha_event_commands,
+        entity_state_mappings,
+        enable_entity_state_events,
         hidraw_path,
         enable_hid_commands,
     )
