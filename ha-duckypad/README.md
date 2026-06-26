@@ -7,8 +7,9 @@
 Home Assistant OS add-on for reading key events from a DuckyPad Pro USB input
 device and triggering Home Assistant services.
 
-This MVP focuses on reliable key input handling only. It does not control the
-DuckyPad display or RGB lighting.
+This MVP focuses on reliable key input handling first. Experimental HID
+commands can send a small set of documented commands back to the DuckyPad Pro,
+but direct OLED drawing is not implemented.
 
 ## What It Does
 
@@ -20,6 +21,7 @@ DuckyPad display or RGB lighting.
 - Ignores common modifier keys such as `KEY_LEFTMETA`.
 - Debounces repeated key-down events to avoid accidental double triggers.
 - Optionally logs safe HID diagnostics for future OLED/RGB experiments.
+- Optionally sends documented DuckyPad HID commands when explicitly enabled.
 
 ## Default Device
 
@@ -36,6 +38,8 @@ path can point to the stable `by-id` path.
 debounce_ms: 500
 hidraw_path: /dev/hidraw0
 enable_hid_debug: false
+enable_hid_commands: false
+hid_commands_on_start: []
 button_mappings:
   - key: KEY_F13
     service: switch.toggle
@@ -64,6 +68,8 @@ device_path: /dev/input/by-id/usb-dekuNukem_duckyPad_Pro_DP24_A1E7C3D4-event-kbd
 debounce_ms: 500
 hidraw_path: /dev/hidraw0
 enable_hid_debug: false
+enable_hid_commands: false
+hid_commands_on_start: []
 button_mappings:
   - key: KEY_F13
     service: switch.toggle
@@ -84,6 +90,67 @@ Each mapping uses:
   features.
 - `enable_hid_debug`: Logs HID metadata and tests read-only access. This does
   not send commands to the DuckyPad.
+- `enable_hid_commands`: Allows the add-on to write documented 64-byte HID
+  command packets to `hidraw_path`. Default is `false`.
+- `hid_commands_on_start`: Optional list of HID commands to send once when the
+  add-on starts.
+
+## Experimental HID Commands
+
+HID commands are based on the official DuckyPad HID command protocol:
+
+```text
+https://github.com/duckyPad/duckyPad-Profile-Autoswitcher/blob/master/HID_details.md
+```
+
+Supported command names:
+
+- `get_info`
+- `set_rtc`
+- `set_rgb`
+- `next_profile`
+- `previous_profile`
+- `goto_profile_number`
+- `goto_profile_name`
+- `sleep`
+- `wake`
+- `dump_gv`
+- `write_gv`
+
+Example startup commands:
+
+```yaml
+enable_hid_commands: true
+hid_commands_on_start:
+  - hid_command: get_info
+  - hid_command: set_rtc
+```
+
+Example key mapping that changes one DuckyPad LED:
+
+```yaml
+button_mappings:
+  - key: KEY_F15
+    hid_command: set_rgb
+    led_index: 0
+    red: 0
+    green: 64
+    blue: 255
+```
+
+Example key mapping that writes a persistent global variable:
+
+```yaml
+button_mappings:
+  - key: KEY_F16
+    hid_command: write_gv
+    gv_index: 0
+    gv_value: 1
+```
+
+For OLED workflows, use `write_gv` to send numeric state into `_GV0` to
+`_GV31`, then use DuckyScript on the DuckyPad to read those values and draw on
+the OLED with `OLED_PRINT`, `OLED_CLEAR`, and `OLED_UPDATE`.
 
 ## PC Commands With HASS.Agent
 
@@ -116,7 +183,7 @@ enable_hid_debug: true
 ```
 
 This mode only logs device metadata and performs a read-only open test. It does
-not write to the device and does not control the OLED display or RGB lighting.
+not write to the device. HID writes require `enable_hid_commands: true`.
 
 ## Repository Layout
 
