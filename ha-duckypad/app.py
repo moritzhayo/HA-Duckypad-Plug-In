@@ -17,6 +17,7 @@ DEFAULT_DEVICE_PATH = (
 )
 DEFAULT_OPTIONS = {
     "device_path": DEFAULT_DEVICE_PATH,
+    "debounce_ms": 500,
     "button_mappings": [
         {
             "key": "KEY_F13",
@@ -33,6 +34,16 @@ DEFAULT_OPTIONS = {
 RECONNECT_DELAY_SECONDS = 3
 REQUEST_TIMEOUT_SECONDS = 10
 KEY_DOWN = 1
+IGNORED_KEYS = {
+    "KEY_LEFTALT",
+    "KEY_LEFTCTRL",
+    "KEY_LEFTMETA",
+    "KEY_LEFTSHIFT",
+    "KEY_RIGHTALT",
+    "KEY_RIGHTCTRL",
+    "KEY_RIGHTMETA",
+    "KEY_RIGHTSHIFT",
+}
 
 
 logging.basicConfig(
@@ -54,6 +65,7 @@ def load_options() -> dict[str, Any]:
 
     return {
         "device_path": options.get("device_path") or DEFAULT_DEVICE_PATH,
+        "debounce_ms": int(options.get("debounce_ms", 500)),
         "button_mappings": options.get("button_mappings") or [],
     }
 
@@ -166,10 +178,12 @@ def read_device_events(
     mappings: dict[str, dict[str, Any]],
     headers: dict[str, str] | None,
     api_base_url: str,
+    debounce_seconds: float,
 ) -> None:
     wait_for_device(device_path)
     device = InputDevice(device_path)
     LOGGER.info("Connected to input device: %s (%s)", device.name, device.path)
+    last_triggered_at: dict[str, float] = {}
 
     try:
         for event in device.read_loop():
@@ -193,6 +207,9 @@ def read_device_events(
                 key_value,
             )
 
+            if key_name.upper() in IGNORED_KEYS:
+                continue
+
             if key_value != KEY_DOWN:
                 continue
 
@@ -201,6 +218,13 @@ def read_device_events(
                 LOGGER.info("No mapping configured for %s", key_name)
                 continue
 
+            now = time.monotonic()
+            previous_triggered_at = last_triggered_at.get(key_name.upper(), 0)
+            if debounce_seconds > 0 and now - previous_triggered_at < debounce_seconds:
+                LOGGER.info("Ignoring %s because it is inside the debounce window", key_name)
+                continue
+
+            last_triggered_at[key_name.upper()] = now
             call_home_assistant_service(mapping, headers, api_base_url)
     finally:
         device.close()
@@ -209,16 +233,24 @@ def read_device_events(
 def main() -> None:
     options = load_options()
     device_path = str(options["device_path"])
+    debounce_seconds = max(0, int(options.get("debounce_ms", 500))) / 1000
     mappings = build_mapping_lookup(options["button_mappings"])
     headers = get_auth_headers()
     api_base_url = get_api_base_url()
 
     LOGGER.info("Using input device path: %s", device_path)
     LOGGER.info("Using Home Assistant API base URL: %s", api_base_url)
+    LOGGER.info("Using debounce window: %.3f second(s)", debounce_seconds)
 
     while True:
         try:
-            read_device_events(device_path, mappings, headers, api_base_url)
+            read_device_events(
+                device_path,
+                mappings,
+                headers,
+                api_base_url,
+                debounce_seconds,
+            )
         except KeyboardInterrupt:
             LOGGER.info("Stopping HA DuckyPad add-on")
             raise
