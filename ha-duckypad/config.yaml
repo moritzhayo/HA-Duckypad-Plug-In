@@ -1,0 +1,34 @@
+name: HA DuckyPad
+version: "0.1.0"
+slug: ha_duckypad
+description: Trigger Home Assistant services from DuckyPad Pro USB key events.
+url: https://github.com/moritzhayo/HA-Duckypad-Plug-In
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+startup: application
+boot: auto
+init: false
+homeassistant_api: true
+udev: true
+apparmor: false
+devices:
+  - /dev/input
+options:
+  device_path: /dev/input/by-id/usb-dekuNukem_duckyPad_Pro_DP24_A1E7C3D4-event-kbd
+  button_mappings:
+    - key: KEY_F13
+      service: switch.toggle
+      entity_id: switch.elegoo
+    - key: KEY_F14
+      service: switch.toggle
+      entity_id: switch.voron
+schema:
+  device_path: device(subsystem=input)
+  button_mappings:
+    - key: str
+      service: str
+      entity_id: str?
