@@ -1,0 +1,22 @@
+alias: DuckyPad Live HID Test
+sequence:
+  - event: ha_duckypad_hid_command
+    event_data:
+      hid_command: set_rgb
+      led_index: 0
+      red: 0
+      green: 64
+      blue: 255
+  - delay:
+      seconds: 1
+  - event: ha_duckypad_hid_command
+    event_data:
+      hid_command: write_gv
+      gv_index: 2
+      gv_value: 42
+  - delay:
+      seconds: 1
+  - event: ha_duckypad_hid_command
+    event_data:
+      hid_command: get_info
+mode: single
