@@ -1,5 +1,5 @@
 name: HA DuckyPad
-version: "0.3.0"
+version: "0.4.0"
 slug: ha_duckypad
 description: Trigger Home Assistant services from DuckyPad Pro USB key events.
 url: https://github.com/moritzhayo/HA-Duckypad-Plug-In
@@ -23,6 +23,8 @@ options:
   debounce_ms: 500
   hidraw_path: /dev/hidraw0
   enable_hid_debug: false
+  enable_hid_commands: false
+  hid_commands_on_start: []
   button_mappings:
     - key: KEY_F13
       service: switch.toggle
@@ -35,7 +37,27 @@ schema:
   debounce_ms: int(0,5000)
   hidraw_path: str
   enable_hid_debug: bool
+  enable_hid_commands: bool
+  hid_commands_on_start:
+    - hid_command: str
+      profile_number: int(1,255)?
+      profile_name: str?
+      led_index: int(0,19)?
+      red: int(0,255)?
+      green: int(0,255)?
+      blue: int(0,255)?
+      gv_index: int(0,31)?
+      gv_value: int?
   button_mappings:
     - key: str
-      service: str
+      service: str?
       entity_id: str?
+      hid_command: str?
+      profile_number: int(1,255)?
+      profile_name: str?
+      led_index: int(0,19)?
+      red: int(0,255)?
+      green: int(0,255)?
+      blue: int(0,255)?
+      gv_index: int(0,31)?
+      gv_value: int?
