@@ -14,3 +14,7 @@ https://github.com/moritzhayo/HA-Duckypad-Plug-In
 ```
 
 The actual add-on lives in [`ha-duckypad/`](ha-duckypad/).
+
+## License
+
+This project is released under the [MIT License](LICENSE).
