@@ -1,0 +1,65 @@
+- alias: DuckyPad Sync Printer Switches to GV
+  mode: restart
+  trigger:
+    - platform: state
+      entity_id:
+        - switch.elegoo
+        - switch.voron
+  action:
+    - service: script.duckypad_status_to_gv
+
+- alias: DuckyPad Elegoo LED Status
+  mode: restart
+  trigger:
+    - platform: state
+      entity_id: switch.elegoo
+  action:
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: switch.elegoo
+              state: "on"
+          sequence:
+            - event: ha_duckypad_hid_command
+              event_data:
+                hid_command: set_rgb
+                led_index: 0
+                red: 0
+                green: 64
+                blue: 0
+      default:
+        - event: ha_duckypad_hid_command
+          event_data:
+            hid_command: set_rgb
+            led_index: 0
+            red: 24
+            green: 24
+            blue: 24
+
+- alias: DuckyPad Voron LED Status
+  mode: restart
+  trigger:
+    - platform: state
+      entity_id: switch.voron
+  action:
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: switch.voron
+              state: "on"
+          sequence:
+            - event: ha_duckypad_hid_command
+              event_data:
+                hid_command: set_rgb
+                led_index: 1
+                red: 64
+                green: 0
+                blue: 0
+      default:
+        - event: ha_duckypad_hid_command
+          event_data:
+            hid_command: set_rgb
+            led_index: 1
+            red: 24
+            green: 24
+            blue: 24
