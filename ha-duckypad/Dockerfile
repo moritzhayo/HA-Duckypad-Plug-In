@@ -1,6 +1,6 @@
 FROM ghcr.io/home-assistant/base:3.22
 
-ARG BUILD_VERSION=0.8.0
+ARG BUILD_VERSION=0.9.0
 ARG BUILD_ARCH=amd64
 
 LABEL \
@@ -21,6 +21,7 @@ RUN apk add --no-cache \
     python3-dev \
   && pip3 install --break-system-packages --no-cache-dir \
     evdev==1.7.1 \
+    PyYAML==6.0.2 \
     requests==2.32.3 \
     websocket-client==1.8.0 \
   && apk del \
