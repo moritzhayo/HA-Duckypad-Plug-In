@@ -7,7 +7,7 @@ from typing import Any
 import yaml
 
 CONFIG_PATH = Path("/data/options.json")
-DEFAULT_MAPPING_CONFIG_PATH = "/share/ha-duckypad/buttons.yaml"
+DEFAULT_MAPPING_CONFIG_PATH = "/config/ha-duckypad/buttons.yaml"
 EXTERNAL_CONFIG_KEYS = {
     "button_mappings",
     "hid_commands_on_start",
