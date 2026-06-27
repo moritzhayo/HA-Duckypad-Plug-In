@@ -1,0 +1,38 @@
+# HA DuckyPad harmless smoke test
+# Copy this to /config/ha-duckypad/buttons.yaml for quick testing.
+# It does not toggle switch.elegoo or switch.voron.
+#
+# Recommended DuckyPad side:
+# - Put examples/oled_smoke_test.txt on a DuckyPad key/script that keeps
+#   showing _GV0 on the OLED.
+# - Then use the keys below to write values to _GV0.
+#
+# Expected add-on log after restart:
+#   Loaded 6 button mapping(s)
+
+hidraw_path: auto
+enable_hid_commands: true
+enable_ha_event_commands: true
+
+button_mappings:
+  # Basic DuckyPad sanity checks
+  - key: KEY_F13
+    action: hid:get_info
+  - key: KEY_F14
+    action: hid:wake
+  - key: KEY_F15
+    action: hid:set_rtc
+
+  # OLED/GV smoke test: write visible values to _GV0
+  - key: KEY_F16
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 1
+  - key: KEY_F17
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 2
+  - key: KEY_F18
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 0
