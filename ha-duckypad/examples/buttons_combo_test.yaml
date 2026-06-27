@@ -1,0 +1,165 @@
+# HA DuckyPad modifier-combo test
+# Copy this to /config/ha-duckypad/buttons.yaml.
+# Restart the add-on after saving.
+#
+# This avoids F25+ and uses only KEY_F13 - KEY_F24 plus modifiers.
+# Configure DuckyPad keys to send combinations like CTRL+F13, SHIFT+F13,
+# ALT+F13, or CTRL+SHIFT+F13.
+#
+# Expected add-on log after restart:
+#   Loaded 36 button mapping(s)
+#
+# When a combo is detected, the log includes:
+#   Resolved key combo CTRL+KEY_F13 to mapping CTRL+KEY_F13
+
+hidraw_path: auto
+enable_hid_commands: true
+
+button_mappings:
+  # Plain layer: KEY_F13 - KEY_F24
+  - key: KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 13
+  - key: KEY_F14
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 14
+  - key: KEY_F15
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 15
+  - key: KEY_F16
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 16
+  - key: KEY_F17
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 17
+  - key: KEY_F18
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 18
+  - key: KEY_F19
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 19
+  - key: KEY_F20
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 20
+  - key: KEY_F21
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 21
+  - key: KEY_F22
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 22
+  - key: KEY_F23
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 23
+  - key: KEY_F24
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 24
+
+  # CTRL layer
+  - key: CTRL+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 113
+  - key: CTRL+KEY_F14
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 114
+  - key: CTRL+KEY_F15
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 115
+  - key: CTRL+KEY_F16
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 116
+  - key: CTRL+KEY_F17
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 117
+  - key: CTRL+KEY_F18
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 118
+
+  # SHIFT layer
+  - key: SHIFT+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 213
+  - key: SHIFT+KEY_F14
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 214
+  - key: SHIFT+KEY_F15
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 215
+  - key: SHIFT+KEY_F16
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 216
+  - key: SHIFT+KEY_F17
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 217
+  - key: SHIFT+KEY_F18
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 218
+
+  # ALT layer
+  - key: ALT+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 313
+  - key: ALT+KEY_F14
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 314
+  - key: ALT+KEY_F15
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 315
+  - key: ALT+KEY_F16
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 316
+
+  # META/WIN layer. The plain key still works as fallback if no META mapping exists.
+  - key: META+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 413
+  - key: META+KEY_F14
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 414
+
+  # Multi-modifier layer
+  - key: CTRL+SHIFT+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 513
+  - key: CTRL+SHIFT+KEY_F14
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 514
+  - key: CTRL+ALT+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 613
+  - key: SHIFT+ALT+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 713
