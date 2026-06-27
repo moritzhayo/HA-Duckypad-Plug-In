@@ -125,21 +125,15 @@ def read_device_events_with_combos(
             if key_value != app.KEY_DOWN:
                 continue
 
-            plain_key = key_name.upper()
-            combo_key = build_event_key(active_modifiers, key_name)
-            mapping = mappings.get(combo_key)
-            trigger_key = combo_key
-
-            if not mapping and combo_key != plain_key:
-                mapping = mappings.get(plain_key)
-                trigger_key = plain_key
+            trigger_key = build_event_key(active_modifiers, key_name)
+            mapping = mappings.get(trigger_key)
 
             if not mapping:
-                app.LOGGER.info("No mapping configured for %s", combo_key)
+                app.LOGGER.info("No mapping configured for %s", trigger_key)
                 continue
 
-            if combo_key != plain_key:
-                app.LOGGER.info("Resolved key combo %s to mapping %s", combo_key, trigger_key)
+            if active_modifiers:
+                app.LOGGER.info("Resolved key combo %s to mapping %s", trigger_key, trigger_key)
 
             now = time.monotonic()
             previous_triggered_at = last_triggered_at.get(trigger_key, 0)
