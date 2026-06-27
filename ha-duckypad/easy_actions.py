@@ -21,6 +21,39 @@ EXTERNAL_CONFIG_KEYS = {
     "debounce_ms",
 }
 
+DEFAULT_MAPPING_FILE = """# HA DuckyPad button mappings
+# Edit this file instead of jumping through the add-on UI.
+# After saving changes, restart the HA DuckyPad add-on.
+#
+# This starter config is intentionally harmless: it writes test numbers into
+# DuckyPad _GV0 instead of toggling real Home Assistant switches.
+
+enable_hid_commands: true
+enable_ha_event_commands: true
+hidraw_path: auto
+button_mappings:
+  - key: KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 13
+  - key: CTRL+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 113
+  - key: SHIFT+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 213
+  - key: ALT+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 313
+  - key: CTRL+SHIFT+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 513
+"""
+
 QUICK_ACTION_SERVICE_DEFAULTS = {
     "automation": "automation.trigger",
     "button": "button.press",
@@ -70,15 +103,7 @@ def write_default_mapping_file(path: Path, options: dict[str, Any]) -> None:
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        mappings = options.get("button_mappings") or []
-        path.write_text(
-            "# HA DuckyPad button mappings\n"
-            "# Edit this file instead of jumping through the add-on UI.\n"
-            "# After saving changes, restart the HA DuckyPad add-on.\n\n"
-            "button_mappings:\n"
-            + yaml.safe_dump(mappings, sort_keys=False, default_flow_style=False),
-            encoding="utf-8",
-        )
+        path.write_text(DEFAULT_MAPPING_FILE, encoding="utf-8")
         print(f"[easy-actions] Created button mapping template at {path}", flush=True)
     except OSError as error:
         print(f"[easy-actions] Could not create mapping template at {path}: {error}", flush=True)
