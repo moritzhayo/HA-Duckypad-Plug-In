@@ -1,6 +1,6 @@
 FROM ghcr.io/home-assistant/base:3.22
 
-ARG BUILD_VERSION=0.7.0
+ARG BUILD_VERSION=0.8.0
 ARG BUILD_ARCH=amd64
 
 LABEL \
@@ -30,6 +30,7 @@ RUN apk add --no-cache \
     python3-dev
 
 COPY app.py /app.py
+COPY easy_actions.py /easy_actions.py
 COPY run.sh /run.sh
 
 RUN chmod a+x /run.sh
