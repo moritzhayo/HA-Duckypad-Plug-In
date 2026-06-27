@@ -12,13 +12,13 @@ entity_state_mappings:
     gv_index: 1
     state_type: bool
 button_mappings:
+  - key: KEY_F12
+    action: button.windowspc_start_calc
   - key: KEY_F13
-    service: switch.toggle
-    entity_id: switch.elegoo
+    action: switch.elegoo
   - key: KEY_F14
-    service: switch.toggle
-    entity_id: switch.voron
+    action: switch.voron
   - key: KEY_F15
-    service: script.duckypad_wake_and_sync_clock
+    action: script.duckypad_wake_and_sync_clock
   - key: KEY_F16
-    service: script.duckypad_open_home_assistant_on_pc
+    action: script.duckypad_open_home_assistant_on_pc
