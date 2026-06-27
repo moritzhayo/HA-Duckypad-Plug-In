@@ -1,4 +1,5 @@
 hidraw_path: auto
+enable_hid_commands: true
 button_mappings:
   - key: KEY_F12
     action: button.windowspc_start_calc
@@ -8,14 +9,7 @@ button_mappings:
     action: switch.voron
   - key: KEY_F15
     action: script.duckypad_open_home_assistant_on_pc
-
-enable_hid_commands: true
-button_mappings:
-  - key: KEY_F13
-    action: switch.elegoo
-  - key: KEY_F14
-    action: switch.voron
-  - key: KEY_F15
-    action: hid:wake
   - key: KEY_F16
+    action: hid:wake
+  - key: KEY_F17
     action: hid:set_rtc
