@@ -4,7 +4,22 @@ import json
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 CONFIG_PATH = Path("/data/options.json")
+DEFAULT_MAPPING_CONFIG_PATH = "/share/ha-duckypad/buttons.yaml"
+EXTERNAL_CONFIG_KEYS = {
+    "button_mappings",
+    "hid_commands_on_start",
+    "entity_state_mappings",
+    "entity_state_sync_interval",
+    "enable_hid_commands",
+    "enable_ha_event_commands",
+    "enable_entity_state_events",
+    "ha_event_command_type",
+    "hidraw_path",
+    "debounce_ms",
+}
 
 QUICK_ACTION_SERVICE_DEFAULTS = {
     "automation": "automation.trigger",
@@ -40,6 +55,77 @@ def as_string(value: Any) -> str:
 
 def normalize_hid_command(command: str) -> str:
     return command.strip().lower().replace("-", "_")
+
+
+def load_structured_file(path: Path) -> Any:
+    with path.open("r", encoding="utf-8") as config_file:
+        if path.suffix.lower() == ".json":
+            return json.load(config_file)
+        return yaml.safe_load(config_file)
+
+
+def write_default_mapping_file(path: Path, options: dict[str, Any]) -> None:
+    if path.exists():
+        return
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        mappings = options.get("button_mappings") or []
+        path.write_text(
+            "# HA DuckyPad button mappings\n"
+            "# Edit this file instead of jumping through the add-on UI.\n"
+            "# After saving changes, restart the HA DuckyPad add-on.\n\n"
+            "button_mappings:\n"
+            + yaml.safe_dump(mappings, sort_keys=False, default_flow_style=False),
+            encoding="utf-8",
+        )
+        print(f"[easy-actions] Created button mapping template at {path}", flush=True)
+    except OSError as error:
+        print(f"[easy-actions] Could not create mapping template at {path}: {error}", flush=True)
+
+
+def merge_external_config(options: dict[str, Any]) -> dict[str, Any]:
+    configured_path = as_string(options.get("mapping_config_path")) or DEFAULT_MAPPING_CONFIG_PATH
+    if not configured_path:
+        return options
+
+    path = Path(configured_path)
+    write_default_mapping_file(path, options)
+    if not path.exists():
+        return options
+
+    try:
+        external_config = load_structured_file(path)
+    except (OSError, ValueError, yaml.YAMLError) as error:
+        print(f"[easy-actions] Could not load mapping config {path}: {error}", flush=True)
+        return options
+
+    if external_config is None:
+        print(f"[easy-actions] Mapping config {path} is empty", flush=True)
+        return options
+
+    merged_options = dict(options)
+    if isinstance(external_config, list):
+        merged_options["button_mappings"] = external_config
+        print(f"[easy-actions] Loaded button mappings from {path}", flush=True)
+        return merged_options
+
+    if not isinstance(external_config, dict):
+        print(f"[easy-actions] Ignoring mapping config {path}: expected object or list", flush=True)
+        return options
+
+    loaded_keys = []
+    for key in EXTERNAL_CONFIG_KEYS:
+        if key in external_config:
+            merged_options[key] = external_config[key]
+            loaded_keys.append(key)
+
+    if loaded_keys:
+        print(
+            f"[easy-actions] Loaded {', '.join(sorted(loaded_keys))} from {path}",
+            flush=True,
+        )
+    return merged_options
 
 
 def infer_action(action: str) -> dict[str, str]:
@@ -96,20 +182,16 @@ def main() -> None:
     with CONFIG_PATH.open("r", encoding="utf-8") as options_file:
         options = json.load(options_file)
 
+    options = merge_external_config(options)
     mappings = options.get("button_mappings")
-    if not isinstance(mappings, list):
-        return
+    if isinstance(mappings, list):
+        options["button_mappings"] = [expand_button_mapping(mapping) for mapping in mappings]
 
-    expanded_mappings = [expand_button_mapping(mapping) for mapping in mappings]
-    if expanded_mappings == mappings:
-        return
-
-    options["button_mappings"] = expanded_mappings
     with CONFIG_PATH.open("w", encoding="utf-8") as options_file:
         json.dump(options, options_file, indent=2)
         options_file.write("\n")
 
-    print("[easy-actions] Expanded button action shortcuts", flush=True)
+    print("[easy-actions] Prepared effective add-on options", flush=True)
 
 
 if __name__ == "__main__":
