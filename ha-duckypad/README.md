@@ -12,46 +12,62 @@ The easiest way to manage buttons is one file:
 /share/ha-duckypad/buttons.yaml
 ```
 
-The add-on creates a starter file there on first run. Edit that file, restart the add-on, done. You no longer need to jump through the long add-on options list for every new button.
+If your editor only shows Home Assistant's `/config` folder, set `mapping_config_path` to:
+
+```text
+/config/ha-duckypad/buttons.yaml
+```
+
+The add-on creates a starter file there on first run. Edit that file, restart the add-on, done.
 
 Example:
 
 ```yaml
 button_mappings:
-  - key: KEY_F12
-    action: button.windowspc_start_calc
   - key: KEY_F13
     action: switch.elegoo
-  - key: KEY_F14
-    action: switch.voron
-  - key: KEY_F15
+  - key: CTRL+KEY_F13
+    action: button.windowspc_start_calc
+  - key: SHIFT+KEY_F13
     action: script.duckypad_open_home_assistant_on_pc
 ```
 
-The file can also contain the comfort options you use often:
+## Modifier Combos
+
+`KEY_F13` through `KEY_F24` are usually the reliable macro keys. To get more slots, map modifier combinations:
 
 ```yaml
-enable_hid_commands: true
-enable_ha_event_commands: true
-enable_entity_state_events: true
-entity_state_sync_interval: 10
-entity_state_mappings:
-  - entity_id: switch.elegoo
-    gv_index: 0
-    state_type: bool
-  - entity_id: switch.voron
-    gv_index: 1
-    state_type: bool
 button_mappings:
   - key: KEY_F13
-    action: switch.elegoo
-  - key: KEY_F14
-    action: switch.voron
-  - key: KEY_F16
-    action: hid:wake
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 13
+  - key: CTRL+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 113
+  - key: SHIFT+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 213
+  - key: ALT+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 313
+  - key: CTRL+SHIFT+KEY_F13
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 513
 ```
 
-If you want a different location, change `mapping_config_path` in the add-on options. JSON also works, but YAML is nicer to edit by hand.
+Supported modifier names:
+
+- `CTRL`
+- `SHIFT`
+- `ALT`
+- `META` for Windows/Command/Super
+
+The add-on normalizes modifier order, so `SHIFT+CTRL+KEY_F13` and `CTRL+SHIFT+KEY_F13` mean the same thing. If no combo mapping exists, the plain key mapping is used as a fallback, which keeps older DuckyPad profiles working.
 
 ## Action Shortcuts
 
@@ -89,7 +105,7 @@ For multi-step macros, create a Home Assistant script and map the key to that sc
 ## Quick Setup
 
 ```yaml
-mapping_config_path: /share/ha-duckypad/buttons.yaml
+mapping_config_path: /config/ha-duckypad/buttons.yaml
 hidraw_path: auto
 debounce_ms: 500
 enable_hid_commands: true
@@ -101,16 +117,8 @@ entity_state_sync_interval: 10
 On startup, the log should show something like:
 
 ```text
-[easy-actions] Loaded button_mappings from /share/ha-duckypad/buttons.yaml
+[easy-actions] Loaded button_mappings from /config/ha-duckypad/buttons.yaml
 Using HID raw path setting: auto -> /dev/hidraw0
-```
-
-If auto-detection cannot find the DuckyPad HID raw device, set `hidraw_path` manually to the path shown by Home Assistant, for example `/dev/hidraw0`.
-
-## Default Device
-
-```text
-/dev/input/by-id/usb-dekuNukem_duckyPad_Pro_DP24_A1E7C3D4-event-kbd
 ```
 
 When any DuckyPad key is pressed, the add-on log includes a line like:
@@ -119,14 +127,20 @@ When any DuckyPad key is pressed, the add-on log includes a line like:
 Received key event: name=KEY_F13 code=183 state=key_down value=1
 ```
 
+When a combo is detected, the log includes a line like:
+
+```text
+Resolved key combo CTRL+KEY_F13 to mapping CTRL+KEY_F13
+```
+
 ## Features
 
 - Reads Linux input events with Python and `evdev`.
 - Logs every key event with key name, key code, state, and value.
+- Supports `CTRL`, `SHIFT`, `ALT`, and `META` key combinations.
 - Calls Home Assistant services on key-down events.
 - Uses the Home Assistant add-on `SUPERVISOR_TOKEN`.
 - Reconnects automatically if the USB device disappears and comes back.
-- Ignores common modifier keys such as `KEY_LEFTMETA`.
 - Debounces repeated key-down events to avoid accidental double triggers.
 - Supports optional DuckyPad HID commands.
 - Supports Home Assistant events that trigger HID commands live.
@@ -179,26 +193,16 @@ entity_state_mappings:
 
 For OLED workflows, use `write_gv` or entity state sync to send numeric state into `_GV0` to `_GV31`, then use DuckyScript on the DuckyPad to read those values and draw on the OLED with `OLED_PRINT`, `OLED_CLEAR`, and `OLED_UPDATE`.
 
-## PC Commands With HASS.Agent
-
-Create a HASS.Agent command as a Home Assistant button entity, then map a DuckyPad key to that button:
-
-```yaml
-button_mappings:
-  - key: KEY_F12
-    action: button.windowspc_start_calc
-```
-
-If the DuckyPad key sends modifier keys such as `KEY_LEFTMETA` together with the real key, the add-on logs the event but ignores the modifier for mapping.
-
 ## Example Files
 
-- `examples/buttons.yaml`: central mapping file example for `/share/ha-duckypad/buttons.yaml`.
-- `examples/addon_options_easy_actions.yaml`: shortest setup examples using `action`.
+- `examples/buttons.yaml`: central mapping file example.
+- `examples/buttons_smoke_test.yaml`: harmless HID/GV test without toggling real switches.
+- `examples/buttons_combo_test.yaml`: extensive `KEY_F13`-`KEY_F24` plus modifier combo test.
 - `examples/addon_options_comfort.yaml`: live events, `_GV` sync, and sample button mappings.
 - `examples/home_assistant_live_hid_script.yaml`: quick live HID smoke test.
 - `examples/home_assistant_scripts.yaml`: reusable scripts for wake, RTC sync, GV sync, RGB, and opening Home Assistant on a PC through HASS.Agent.
 - `examples/home_assistant_automations.yaml`: example automations that react to `switch.elegoo` and `switch.voron`.
+- `examples/oled_smoke_test.txt`: looping OLED display for `_GV0` smoke tests.
 - `examples/oled_gv_status.txt`: short one-shot OLED status display.
 - `examples/oled_live_switch_status_loop.txt`: looping OLED display for `_GV0` and `_GV1`.
 - `examples/oled_macro_confirm_once.txt`: short confirmation screen after a macro.
@@ -212,6 +216,7 @@ ha-duckypad/
   Dockerfile
   run.sh
   app.py
+  app_combo.py
   easy_actions.py
   README.md
 ```
