@@ -4,9 +4,17 @@
 
 Home Assistant OS add-on for reading key events from a DuckyPad Pro USB input device and triggering Home Assistant services. Experimental HID commands can also send a small set of documented commands back to the DuckyPad Pro.
 
-## Easiest Button Setup
+## Central Button File
 
-For normal Home Assistant actions you can now use the short `action` form:
+The easiest way to manage buttons is one file:
+
+```text
+/share/ha-duckypad/buttons.yaml
+```
+
+The add-on creates a starter file there on first run. Edit that file, restart the add-on, done. You no longer need to jump through the long add-on options list for every new button.
+
+Example:
 
 ```yaml
 button_mappings:
@@ -20,7 +28,34 @@ button_mappings:
     action: script.duckypad_open_home_assistant_on_pc
 ```
 
-The add-on expands common entity domains automatically:
+The file can also contain the comfort options you use often:
+
+```yaml
+enable_hid_commands: true
+enable_ha_event_commands: true
+enable_entity_state_events: true
+entity_state_sync_interval: 10
+entity_state_mappings:
+  - entity_id: switch.elegoo
+    gv_index: 0
+    state_type: bool
+  - entity_id: switch.voron
+    gv_index: 1
+    state_type: bool
+button_mappings:
+  - key: KEY_F13
+    action: switch.elegoo
+  - key: KEY_F14
+    action: switch.voron
+  - key: KEY_F16
+    action: hid:wake
+```
+
+If you want a different location, change `mapping_config_path` in the add-on options. JSON also works, but YAML is nicer to edit by hand.
+
+## Action Shortcuts
+
+For normal Home Assistant actions you can use the short `action` form. The add-on expands common entity domains automatically:
 
 - `switch.example` -> `switch.toggle`
 - `button.example` -> `button.press`
@@ -54,6 +89,7 @@ For multi-step macros, create a Home Assistant script and map the key to that sc
 ## Quick Setup
 
 ```yaml
+mapping_config_path: /share/ha-duckypad/buttons.yaml
 hidraw_path: auto
 debounce_ms: 500
 enable_hid_commands: true
@@ -65,6 +101,7 @@ entity_state_sync_interval: 10
 On startup, the log should show something like:
 
 ```text
+[easy-actions] Loaded button_mappings from /share/ha-duckypad/buttons.yaml
 Using HID raw path setting: auto -> /dev/hidraw0
 ```
 
@@ -111,15 +148,6 @@ Supported command names:
 - `dump_gv`
 - `write_gv`
 
-Example startup commands:
-
-```yaml
-enable_hid_commands: true
-hid_commands_on_start:
-  - hid_command: get_info
-  - hid_command: set_rtc
-```
-
 Example live event from Home Assistant Developer Tools -> Events:
 
 ```json
@@ -165,6 +193,7 @@ If the DuckyPad key sends modifier keys such as `KEY_LEFTMETA` together with the
 
 ## Example Files
 
+- `examples/buttons.yaml`: central mapping file example for `/share/ha-duckypad/buttons.yaml`.
 - `examples/addon_options_easy_actions.yaml`: shortest setup examples using `action`.
 - `examples/addon_options_comfort.yaml`: live events, `_GV` sync, and sample button mappings.
 - `examples/home_assistant_live_hid_script.yaml`: quick live HID smoke test.
