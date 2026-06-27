@@ -20,7 +20,8 @@ CONFIG_PATH = Path("/data/options.json")
 DEFAULT_DEVICE_PATH = (
     "/dev/input/by-id/usb-dekuNukem_duckyPad_Pro_DP24_A1E7C3D4-event-kbd"
 )
-DEFAULT_HIDRAW_PATH = "/dev/hidraw0"
+DEFAULT_HIDRAW_PATH = "auto"
+FALLBACK_HIDRAW_PATH = "/dev/hidraw0"
 DEFAULT_HA_EVENT_COMMAND_TYPE = "ha_duckypad_hid_command"
 DEFAULT_OPTIONS = {
     "device_path": DEFAULT_DEVICE_PATH,
@@ -50,6 +51,9 @@ DEFAULT_OPTIONS = {
 RECONNECT_DELAY_SECONDS = 3
 HA_EVENT_RECONNECT_DELAY_SECONDS = 5
 REQUEST_TIMEOUT_SECONDS = 10
+AUTO_HIDRAW_VALUES = {"", "auto", "autodetect", "detect"}
+DPP_HID_VENDOR_ID = "00000483"
+DPP_HID_PRODUCT_ID = "0000d11d"
 KEY_DOWN = 1
 IGNORED_KEYS = {
     "KEY_LEFTALT",
@@ -150,16 +154,95 @@ def read_text_file(path: Path) -> str | None:
         return None
 
 
+def parse_uevent(text: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
+
+
+def is_auto_hidraw_path(path: str) -> bool:
+    return as_optional_string(path).lower() in AUTO_HIDRAW_VALUES
+
+
+def hidraw_uevent_matches_duckypad(uevent: dict[str, str]) -> bool:
+    hid_name = uevent.get("HID_NAME", "").lower()
+    hid_id = uevent.get("HID_ID", "").lower()
+    return (
+        "duckypad" in hid_name
+        or (DPP_HID_VENDOR_ID.lower() in hid_id and DPP_HID_PRODUCT_ID in hid_id)
+    )
+
+
+def discover_duckypad_hidraw_path() -> str | None:
+    hidraw_root = Path("/sys/class/hidraw")
+    if not hidraw_root.exists():
+        LOGGER.debug("Cannot auto-detect HID raw path; %s does not exist", hidraw_root)
+        return None
+
+    for hidraw_dir in sorted(hidraw_root.glob("hidraw*")):
+        uevent_text = read_text_file(hidraw_dir / "device" / "uevent")
+        if not uevent_text:
+            continue
+
+        uevent = parse_uevent(uevent_text)
+        if not hidraw_uevent_matches_duckypad(uevent):
+            continue
+
+        device_path = Path("/dev") / hidraw_dir.name
+        if device_path.exists():
+            return str(device_path)
+
+        LOGGER.warning(
+            "Auto-detected %s as DuckyPad HID raw device, but %s does not exist",
+            hidraw_dir.name,
+            device_path,
+        )
+
+    return None
+
+
+def resolve_hidraw_path(configured_path: str, log_result: bool = False) -> str:
+    configured = as_optional_string(configured_path)
+    if not is_auto_hidraw_path(configured):
+        return configured
+
+    detected_path = discover_duckypad_hidraw_path()
+    if detected_path:
+        if log_result:
+            LOGGER.info("Auto-detected DuckyPad HID raw path: %s", detected_path)
+        return detected_path
+
+    if Path(FALLBACK_HIDRAW_PATH).exists():
+        if log_result:
+            LOGGER.warning(
+                "Could not auto-detect DuckyPad HID raw path; falling back to %s",
+                FALLBACK_HIDRAW_PATH,
+            )
+        return FALLBACK_HIDRAW_PATH
+
+    if log_result:
+        LOGGER.warning(
+            "Could not auto-detect DuckyPad HID raw path and %s does not exist",
+            FALLBACK_HIDRAW_PATH,
+        )
+    return ""
+
+
 def log_hidraw_diagnostics(hidraw_path: str, enabled: bool) -> None:
     if not enabled:
         LOGGER.info("HID debug is disabled")
         return
 
-    if not hidraw_path:
+    resolved_hidraw_path = resolve_hidraw_path(hidraw_path, log_result=True)
+    if not resolved_hidraw_path:
         LOGGER.warning("HID debug is enabled, but no hidraw_path is configured")
         return
 
-    path = Path(hidraw_path)
+    path = Path(resolved_hidraw_path)
     LOGGER.info("HID debug enabled for %s", path)
 
     if not path.exists():
@@ -580,7 +663,8 @@ def run_configured_hid_command(
         )
         return
 
-    if not hidraw_path:
+    resolved_hidraw_path = resolve_hidraw_path(hidraw_path)
+    if not resolved_hidraw_path:
         LOGGER.warning("Skipping HID command %s because hidraw_path is empty", command)
         return
 
@@ -588,7 +672,7 @@ def run_configured_hid_command(
         command, packet = build_hid_packet(config)
         LOGGER.info("Sending DuckyPad HID command %s from %s", command, source)
         with HID_LOCK:
-            response = send_hid_packet(hidraw_path, packet)
+            response = send_hid_packet(resolved_hidraw_path, packet)
     except (OSError, ValueError) as error:
         LOGGER.error("HID command %s failed before response: %s", command, error)
         return
@@ -1075,6 +1159,54 @@ def start_home_assistant_event_thread(
     thread.start()
 
 
+def count_list_items(value: Any) -> int:
+    if isinstance(value, list):
+        return len(value)
+    return 0
+
+
+def log_setup_hints(
+    hidraw_path: str,
+    resolved_hidraw_path: str,
+    enable_hid_commands: bool,
+    enable_ha_event_commands: bool,
+    enable_entity_state_events: bool,
+    hid_commands_on_start: list[Any],
+    entity_state_mappings: list[Any],
+) -> None:
+    if is_auto_hidraw_path(hidraw_path):
+        if resolved_hidraw_path:
+            LOGGER.info("Using HID raw path setting: auto -> %s", resolved_hidraw_path)
+        else:
+            LOGGER.warning("Using HID raw path setting: auto, but no device was found")
+    else:
+        LOGGER.info("Using HID raw path: %s", hidraw_path)
+
+    LOGGER.info(
+        "Configured startup HID command(s): %s",
+        count_list_items(hid_commands_on_start),
+    )
+    LOGGER.info(
+        "Configured entity state mapping(s): %s",
+        count_list_items(entity_state_mappings),
+    )
+
+    wants_hid_output = (
+        enable_ha_event_commands
+        or bool(hid_commands_on_start)
+        or bool(entity_state_mappings)
+    )
+    if wants_hid_output and not enable_hid_commands:
+        LOGGER.warning(
+            "HID output features are configured, but enable_hid_commands is false"
+        )
+
+    if enable_entity_state_events and not entity_state_mappings:
+        LOGGER.warning(
+            "enable_entity_state_events is true, but no entity_state_mappings are configured"
+        )
+
+
 def execute_mapping_actions(
     mapping: dict[str, Any],
     headers: dict[str, str] | None,
@@ -1189,6 +1321,7 @@ def main() -> None:
     headers = get_auth_headers()
     api_base_url = get_api_base_url()
     websocket_url = get_home_assistant_websocket_url(api_base_url)
+    resolved_hidraw_path = resolve_hidraw_path(hidraw_path, log_result=True)
 
     LOGGER.info("Using input device path: %s", device_path)
     LOGGER.info("Using Home Assistant API base URL: %s", api_base_url)
@@ -1201,6 +1334,15 @@ def main() -> None:
     LOGGER.info(
         "Home Assistant state change events are %s",
         "enabled" if enable_entity_state_events else "disabled",
+    )
+    log_setup_hints(
+        hidraw_path,
+        resolved_hidraw_path,
+        enable_hid_commands,
+        enable_ha_event_commands,
+        enable_entity_state_events,
+        hid_commands_on_start,
+        entity_state_mappings,
     )
     log_hidraw_diagnostics(hidraw_path, enable_hid_debug)
     run_startup_hid_commands(

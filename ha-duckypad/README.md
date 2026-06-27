@@ -30,6 +30,28 @@ DuckyScript on the device plus `_GV` values written by the add-on.
 - Optionally updates those variables immediately when Home Assistant state
   change events arrive.
 
+## Quick Setup
+
+For the easiest setup, keep `hidraw_path: auto` and only enable the features
+you want:
+
+```yaml
+hidraw_path: auto
+enable_hid_commands: true
+enable_ha_event_commands: true
+enable_entity_state_events: true
+entity_state_sync_interval: 10
+```
+
+On startup, the log should show a line like:
+
+```text
+Using HID raw path setting: auto -> /dev/hidraw0
+```
+
+If auto-detection cannot find the DuckyPad HID raw device, set `hidraw_path`
+manually to the path shown by Home Assistant, for example `/dev/hidraw0`.
+
 ## Default Device
 
 ```text
@@ -43,7 +65,7 @@ path can point to the stable `by-id` path.
 
 ```yaml
 debounce_ms: 500
-hidraw_path: /dev/hidraw0
+hidraw_path: auto
 enable_hid_debug: false
 enable_hid_commands: false
 enable_ha_event_commands: false
@@ -78,7 +100,7 @@ http://supervisor/core/api/services/<domain>/<service>
 ```yaml
 device_path: /dev/input/by-id/usb-dekuNukem_duckyPad_Pro_DP24_A1E7C3D4-event-kbd
 debounce_ms: 500
-hidraw_path: /dev/hidraw0
+hidraw_path: auto
 enable_hid_debug: false
 enable_hid_commands: false
 enable_ha_event_commands: false
@@ -103,8 +125,9 @@ Each mapping uses:
 - `entity_id`: Optional Home Assistant entity ID passed as service data.
 - `debounce_ms`: Time window in milliseconds during which repeated key-down
   events for the same key are ignored.
-- `hidraw_path`: Experimental HID raw device path for future DuckyPad output
-  features.
+- `hidraw_path`: HID raw path for DuckyPad output features. Use `auto` to let
+  the add-on find the DuckyPad Pro automatically. If needed, set a fixed path
+  such as `/dev/hidraw0`.
 - `enable_hid_debug`: Logs HID metadata and tests read-only access. This does
   not send commands to the DuckyPad.
 - `enable_hid_commands`: Allows the add-on to write documented 64-byte HID
@@ -322,12 +345,13 @@ The DuckyPad Pro may expose an additional HID raw device such as:
 Enable diagnostics to check whether the add-on can see and open that device:
 
 ```yaml
-hidraw_path: /dev/hidraw0
+hidraw_path: auto
 enable_hid_debug: true
 ```
 
-This mode only logs device metadata and performs a read-only open test. It does
-not write to the device. HID writes require `enable_hid_commands: true`.
+This mode auto-detects the HID raw path, logs device metadata, and performs a
+read-only open test. It does not write to the device. HID writes require
+`enable_hid_commands: true`.
 
 ## Example Files
 

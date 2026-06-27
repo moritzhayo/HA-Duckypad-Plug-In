@@ -8,6 +8,7 @@ Home Assistant OS add-on repository for `ha-duckypad`, an add-on that reads
 DuckyPad Pro USB key events, triggers Home Assistant services, and can
 optionally send experimental documented HID commands, live Home Assistant
 event commands, and Home Assistant entity state values back to the DuckyPad.
+The add-on can auto-detect the DuckyPad HID raw device for easier setup.
 
 Add this repository to the Home Assistant add-on store:
 

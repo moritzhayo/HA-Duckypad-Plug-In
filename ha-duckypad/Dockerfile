@@ -1,6 +1,6 @@
 FROM ghcr.io/home-assistant/base:3.22
 
-ARG BUILD_VERSION=0.6.0
+ARG BUILD_VERSION=0.7.0
 ARG BUILD_ARCH=amd64
 
 LABEL \

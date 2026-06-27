@@ -1,4 +1,5 @@
 enable_hid_commands: true
+hidraw_path: auto
 enable_ha_event_commands: true
 ha_event_command_type: ha_duckypad_hid_command
 enable_entity_state_events: true
