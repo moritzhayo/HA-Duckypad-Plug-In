@@ -1,0 +1,14 @@
+REM HA DuckyPad OLED smoke test
+REM Put this on a DuckyPad key/profile to show _GV0.
+REM Then press HA-mapped keys that write _GV0=0, 1, or 2.
+REM Enable Allow Abort in the DuckyPad Configurator for this looping script.
+
+WHILE TRUE
+  OLED_CLEAR
+  OLED_PRINT 0 0 HA DuckyPad
+  OLED_PRINT 0 16 Smoke Test
+  OLED_PRINT 0 32 _GV0:
+  OLED_PRINT 48 32 $_GV0
+  OLED_UPDATE
+  DELAY 500
+END_WHILE
