@@ -1,5 +1,5 @@
 name: HA DuckyPad
-version: "0.10.0"
+version: "0.10.1"
 slug: ha_duckypad
 description: Trigger Home Assistant services from DuckyPad Pro USB key events.
 url: https://github.com/moritzhayo/HA-Duckypad-Plug-In
