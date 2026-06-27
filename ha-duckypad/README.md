@@ -18,18 +18,25 @@ If your editor only shows Home Assistant's `/config` folder, set `mapping_config
 /config/ha-duckypad/buttons.yaml
 ```
 
-The add-on creates a starter file there on first run. Edit that file, restart the add-on, done.
+The add-on creates a harmless starter file there on first run. It writes test values into DuckyPad `_GV0` instead of toggling real Home Assistant switches. Edit that file, restart the add-on, done. Existing files are never overwritten automatically.
 
 Example:
 
 ```yaml
+enable_hid_commands: true
 button_mappings:
   - key: KEY_F13
-    action: switch.elegoo
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 13
   - key: CTRL+KEY_F13
-    action: button.windowspc_start_calc
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 113
   - key: SHIFT+KEY_F13
-    action: script.duckypad_open_home_assistant_on_pc
+    action: hid:write_gv
+    gv_index: 0
+    gv_value: 213
 ```
 
 ## Modifier Combos
