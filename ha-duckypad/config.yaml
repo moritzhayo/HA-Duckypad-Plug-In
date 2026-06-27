@@ -1,5 +1,5 @@
 name: HA DuckyPad
-version: "0.8.0"
+version: "0.9.0"
 slug: ha_duckypad
 description: Trigger Home Assistant services from DuckyPad Pro USB key events.
 url: https://github.com/moritzhayo/HA-Duckypad-Plug-In
@@ -15,12 +15,15 @@ init: false
 homeassistant_api: true
 udev: true
 apparmor: false
+map:
+  - share:rw
 devices:
   - /dev/input
   - /dev/hidraw0
 options:
   device_path: /dev/input/by-id/usb-dekuNukem_duckyPad_Pro_DP24_A1E7C3D4-event-kbd
   debounce_ms: 500
+  mapping_config_path: /share/ha-duckypad/buttons.yaml
   hidraw_path: auto
   enable_hid_debug: false
   enable_hid_commands: false
@@ -38,6 +41,7 @@ options:
 schema:
   device_path: device(subsystem=input)
   debounce_ms: int(0,5000)
+  mapping_config_path: str
   hidraw_path: str
   enable_hid_debug: bool
   enable_hid_commands: bool
