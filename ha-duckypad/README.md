@@ -67,7 +67,7 @@ Supported modifier names:
 - `ALT`
 - `META` for Windows/Command/Super
 
-The add-on normalizes modifier order, so `SHIFT+CTRL+KEY_F13` and `CTRL+SHIFT+KEY_F13` mean the same thing. If no combo mapping exists, the plain key mapping is used as a fallback, which keeps older DuckyPad profiles working.
+The add-on normalizes modifier order, so `SHIFT+CTRL+KEY_F13` and `CTRL+SHIFT+KEY_F13` mean the same thing. Combo mappings are exact: if `CTRL+KEY_F13` is not configured, it will not fall back to plain `KEY_F13`. This prevents accidental actions.
 
 ## Action Shortcuts
 
@@ -131,6 +131,12 @@ When a combo is detected, the log includes a line like:
 
 ```text
 Resolved key combo CTRL+KEY_F13 to mapping CTRL+KEY_F13
+```
+
+If a combo has no mapping, it does nothing and logs:
+
+```text
+No mapping configured for CTRL+KEY_F13
 ```
 
 ## Features
